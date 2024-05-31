@@ -220,7 +220,7 @@ The default layer settings are lined up on the middle finger column because the 
 NOTE: The default layer settings set by those keys are *NOT* stored in EEPROM and thus do not persist through boots. If you wish to change the default layer in a non-volatile manner, either change the order of the layers in the firmware, for example like so if you want to set Dvorak as the new default:
 ```c
 enum layers {
-    _DVORAK = 0,
+    _SHORTCUTS = 0,
     _ALPHA1,
     _COLEMAK_DH,
     _NAV,

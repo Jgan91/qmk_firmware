@@ -15,12 +15,14 @@
  */
 #include QMK_KEYBOARD_H
 
+#include "os_detection.h"
+
 enum layers {
     _ALPHA1 = 0,
-    _DVORAK,
+    _ALPHA2,
+    _SHORTCUTS,
     _COLEMAK_DH,
     _NAV,
-    _ALPHA2,
     _FUNCTION,
     _ADJUST,
 };
@@ -29,6 +31,9 @@ enum layers {
 
 enum {
     CUSTOM_KEYCODE_START = SAFE_RANGE,
+    
+    // TODO: move later
+    SWAPPER,
 
     // Begin macros for accented letters
     ACCENT_MACRO_START,
@@ -38,10 +43,53 @@ enum {
     // End macros for accented letters
     ACCENT_MACRO_END,
 
-    CUSTOM_KEYCODE_END
+    CUSTOM_KEYCODE_END,
 };
 
+typedef enum {
+    NONE,
+    SWAPPING_START,
+    SWAPPING_CONTINUE,
+} swapper_state_t;
+
+typedef struct {
+    uint8_t state;
+} swapper_t;
+
+swapper_t swapper = {.state = NONE};
+
+typedef struct {
+    os_variant_t type;
+} os_t;
+
+bool is_macos(void);
+
+static os_t os = {.type = OS_UNSURE};
+static uint8_t detect_try_count = 0;
+
+bool is_macos(void) {
+    return os.type == OS_MACOS || os.type == OS_IOS;
+}
+
+void try_detect_os(void) {
+    if (os.type != OS_UNSURE) {
+        return;
+    }
+
+    if (os.type == OS_UNSURE && detect_try_count > 10) {
+        os.type = OS_WINDOWS;
+        return;
+    }
+
+    os.type = detected_host_os();
+    
+    detect_try_count++;
+}
+
 bool process_record_user(uint16_t keycode, keyrecord_t *record) {
+    try_detect_os();
+    bool isMacOS = is_macos();
+
     switch (keycode) {
         case MC_QU:
             if (record->event.pressed) {
@@ -51,10 +99,27 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record) {
             break;
 
         case SWAPPER:
-            if () {
-
+            if (swapper.state == NONE) {
+                swapper.state = SWAPPING_START;
             }
+            
+            // Start swapper
+            switch (swapper.state) {
+                case SWAPPING_START:
+                    if (isMacOS) {
+                        register_mods(MOD_LGUI);
+                    } else {
+                        register_mods(MOD_LALT);
+                    }
+                    swapper.state = SWAPPING_CONTINUE;
+                    break;
+                case SWAPPING_CONTINUE:
+                    tap_code(KC_TAB);
+                    break;
+                default:
+                    break;
             break;
+            }
     }
     return true;
 }
@@ -63,12 +128,14 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record) {
 // Aliases for readability
 #define QWERTY   DF(_ALPHA1)
 #define COLEMAK  DF(_COLEMAK_DH)
-#define DVORAK   DF(_DVORAK)
 
 #define ALPHA2   MO(_ALPHA2)
 #define NAV      MO(_NAV)
 #define FKEYS    MO(_FUNCTION)
 #define ADJUST   MO(_ADJUST)
+
+#define SHO_KCD  LT(_SHORTCUTS, KC_D)
+#define SHO_KCI  LT(_SHORTCUTS, KC_I)
 
 // One Shot modifiers
 #define OS_A2    OSL(_ALPHA2)
@@ -110,30 +177,51 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
  */
     [_ALPHA1] = LAYOUT(
      _______, _______,  KC_B   ,  KC_M  ,   KC_G , _______,                                         _______,   KC_L ,  KC_O ,   KC_U , _______, _______,
-     _______, KC_D   ,  KC_N   ,  KC_S  ,   KC_T , _______,                                         _______,   KC_R ,  KC_A ,   KC_E , KC_I   , _______,
+     _______, SHO_KCD,  KC_N   ,  KC_S  ,   KC_T , _______,                                         _______,   KC_R ,  KC_A ,   KC_E , SHO_KCI, _______,
      _______, _______,  KC_F   ,  KC_C  ,   KC_P , _______, _______, _______,     _______, _______, _______,   KC_H ,KC_COMM, KC_DOT , _______, _______,
                                  _______, _______, KC_SPC , QK_REP , _______,     _______, OS_SHFT, OS_A2  , _______, _______
     ),
 
 /*
- * Base Layer: Dvorak
+ * Alpha 2 Layer: Less used letters & some symbols
  *
  * ,-------------------------------------------.                              ,-------------------------------------------.
- * |  Tab   | ' "  | , <  | . >  |   P  |   Y  |                              |   F  |   G  |   C  |   R  |   L  |  Bksp  |
+ * |        |      |  Q   |  QU  |  K   |      |                              |      |  :   |  =   |  %   |      |        |
  * |--------+------+------+------+------+------|                              |------+------+------+------+------+--------|
- * |Ctrl/Esc|   A  |   O  |   E  |   U  |   I  |                              |   D  |   H  |   T  |   N  |   S  |Ctrl/- _|
+ * |        |  Y   |  Z   |  X   |  W   |      |                              |      |  -   |  +   |  /   |  *   |        |
  * |--------+------+------+------+------+------+-------------.  ,-------------+------+------+------+------+------+--------|
- * | LShift | ; :  |   Q  |   J  |   K  |   X  | [ {  |CapsLk|  |F-keys|  ] } |   B  |   M  |   W  |   V  |   Z  | RShift |
+ * |        |      |  J   |      |  V   |      |      |      |  |      |      |      |  !   |  <   |  >   |      |        |
  * `----------------------+------+------+------+------+------|  |------+------+------+------+------+----------------------'
- *                        |Adjust| LGUI | LAlt/| Space| Nav  |  | Sym  | Space| AltGr| RGUI | Menu |
- *                        |      |      | Enter|      |      |  |      |      |      |      |      |
+ *                        |      |      |      |      |      |  |      |      |      |      |      |
+ *                        |      |      |      |      |      |  |      |      |      |      |      |
  *                        `----------------------------------'  `----------------------------------'
  */
-    [_DVORAK] = LAYOUT(
-     KC_TAB  ,KC_QUOTE,KC_COMM,  KC_DOT,   KC_P ,   KC_Y ,                                        KC_F,   KC_G ,  KC_C ,   KC_R ,  KC_L , KC_BSPC,
-     CTL_ESC , KC_A ,  KC_O   ,  KC_E  ,   KC_U ,   KC_I ,                                        KC_D,   KC_H ,  KC_T ,   KC_N ,  KC_S , CTL_MINS,
-     KC_LSFT ,KC_SCLN, KC_Q   ,  KC_J  ,   KC_K ,   KC_X , KC_LBRC,KC_CAPS,     FKEYS  , KC_RBRC, KC_B,   KC_M ,  KC_W ,   KC_V ,  KC_Z , KC_RSFT,
-                                 ADJUST, KC_LGUI, ALT_ENT, KC_SPC , NAV   ,     ALPHA2    , KC_SPC ,KC_RALT, KC_RGUI, KC_APP
+    [_ALPHA2] = LAYOUT(
+      _______, _______, KC_Q   , MC_QU  , KC_K   , _______,                                         _______, KC_COLN, KC_EQL , KC_PERC, _______, _______,
+      _______, KC_Y   , KC_Z   , KC_X   , KC_W   , _______,                                         _______, KC_MINS, KC_PLUS, KC_SLSH, KC_ASTR, _______,
+      _______, _______, KC_J   , _______, KC_V   , _______, _______, _______,     _______, _______, _______, KC_EXLM, KC_LT  , KC_GT  , _______, _______,
+                                 _______, _______, _______, _______, _______,     _______, _______, _______, _______, _______
+    ),
+
+/*
+ * Shortcuts Layer
+ *
+ * ,-------------------------------------------.                              ,-------------------------------------------.
+ * |        |      |      |      |      |      |                              |      |      |      |      |      |        |
+ * |--------+------+------+------+------+------|                              |------+------+------+------+------+--------|
+ * |        |      |      |Swappr|      |      |                              |      |      |      |      |      |        |
+ * |--------+------+------+------+------+------+-------------.  ,-------------+------+------+------+------+------+--------|
+ * |        |      |      |      |      |      |      |      |  |      |      |      |      |      |      |      |        |
+ * `----------------------+------+------+------+------+------|  |------+------+------+------+------+----------------------'
+ *                        |      |      |      |      |      |  |      |      |      |      |      |
+ *                        |      |      |      |      |      |  |      |      |      |      |      |
+ *                        `----------------------------------'  `----------------------------------'
+ */
+    [_SHORTCUTS] = LAYOUT(
+      _______, _______, _______, _______, _______, _______,                                          _______, _______, _______, _______, _______, _______,
+      _______, _______, _______, SWAPPER, _______, _______,                                          _______, _______, _______, _______, _______, _______,
+      _______, _______, _______, _______, _______, _______, _______, _______,      _______, _______, _______, _______, _______, _______, _______, _______,
+                                 _______, _______, _______, _______, _______,      _______, _______, _______, _______, _______
     ),
 
 /*
@@ -179,27 +267,6 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
     ),
 
 /*
- * Alpha 2 Layer: Less used letters & some symbols
- *
- * ,-------------------------------------------.                              ,-------------------------------------------.
- * |        |      |  Q   |  QU  |  K   |      |                              |      |  :   |  =   |  %   |      |        |
- * |--------+------+------+------+------+------|                              |------+------+------+------+------+--------|
- * |        |  Y   |  Z   |  X   |  W   |      |                              |      |  -   |  +   |  /   |  *   |        |
- * |--------+------+------+------+------+------+-------------.  ,-------------+------+------+------+------+------+--------|
- * |        |      |  J   |      |  V   |      |      |      |  |      |      |      |  !   |  <   |  >   |      |        |
- * `----------------------+------+------+------+------+------|  |------+------+------+------+------+----------------------'
- *                        |      |      |      |      |      |  |      |      |      |      |      |
- *                        |      |      |      |      |      |  |      |      |      |      |      |
- *                        `----------------------------------'  `----------------------------------'
- */
-    [_ALPHA2] = LAYOUT(
-      _______, _______, KC_Q   , MC_QU  , KC_K   , _______,                                     _______, KC_COLN, KC_EQL , KC_PERC, _______, _______,
-      _______, KC_Y   , KC_Z   , KC_X   , KC_W   , _______,                                     _______, KC_MINS, KC_PLUS, KC_SLSH, KC_ASTR, _______,
-      _______, _______, KC_J   , _______, KC_V   , _______, _______, _______, _______, _______, _______, KC_EXLM, KC_LT  , KC_GT  , _______, _______,
-                                 _______, _______, _______, _______, _______, _______, _______, _______, _______, _______
-    ),
-
-/*
  * Function Layer: Function keys
  *
  * ,-------------------------------------------.                              ,-------------------------------------------.
@@ -236,7 +303,7 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
  */
     [_ADJUST] = LAYOUT(
       _______, _______, _______, QWERTY , _______, _______,                                    _______, _______, _______, _______,  _______, _______,
-      _______, _______, _______, DVORAK , _______, _______,                                    RGB_TOG, RGB_SAI, RGB_HUI, RGB_VAI,  RGB_MOD, _______,
+      _______, _______, _______, SHO_KCD, _______, _______,                                    RGB_TOG, RGB_SAI, RGB_HUI, RGB_VAI,  RGB_MOD, _______,
       _______, _______, _______, COLEMAK, _______, _______,_______, _______, _______, _______, _______, RGB_SAD, RGB_HUD, RGB_VAD, RGB_RMOD, _______,
                                  _______, _______, _______,_______, _______, _______, _______, _______, _______, _______
     ),
@@ -292,7 +359,7 @@ bool oled_task_user(void) {
             case _ALPHA1:
                 oled_write_P(PSTR("QWERTY\n"), false);
                 break;
-            case _DVORAK:
+            case _SHORTCUTS:
                 oled_write_P(PSTR("Dvorak\n"), false);
                 break;
             case _COLEMAK_DH:
