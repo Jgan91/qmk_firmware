@@ -15,7 +15,7 @@
  */
 #include QMK_KEYBOARD_H
 
-#include "os_detection.h"
+#include "keymap.h"
 
 enum layers {
     _ALPHA1 = 0,
@@ -27,68 +27,7 @@ enum layers {
     _ADJUST,
 };
 
-// Custom keycodes
-
-enum {
-    CUSTOM_KEYCODE_START = SAFE_RANGE,
-    
-    // TODO: move later
-    SWAPPER,
-
-    // Begin macros for accented letters
-    ACCENT_MACRO_START,
-
-    MC_QU,
-
-    // End macros for accented letters
-    ACCENT_MACRO_END,
-
-    CUSTOM_KEYCODE_END,
-};
-
-typedef enum {
-    NONE,
-    SWAPPING_START,
-    SWAPPING_CONTINUE,
-} swapper_state_t;
-
-typedef struct {
-    uint8_t state;
-} swapper_t;
-
-swapper_t swapper = {.state = NONE};
-
-typedef struct {
-    os_variant_t type;
-} os_t;
-
-bool is_macos(void);
-
-static os_t os = {.type = OS_UNSURE};
-static uint8_t detect_try_count = 0;
-
-bool is_macos(void) {
-    return os.type == OS_MACOS || os.type == OS_IOS;
-}
-
-void try_detect_os(void) {
-    if (os.type != OS_UNSURE) {
-        return;
-    }
-
-    if (os.type == OS_UNSURE && detect_try_count > 10) {
-        os.type = OS_WINDOWS;
-        return;
-    }
-
-    os.type = detected_host_os();
-    
-    detect_try_count++;
-}
-
 bool process_record_user(uint16_t keycode, keyrecord_t *record) {
-    try_detect_os();
-    bool isMacOS = is_macos();
 
     switch (keycode) {
         case MC_QU:
@@ -97,30 +36,10 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record) {
                 SEND_STRING("qu");
             }
             break;
+        }
 
-        case SWAPPER:
-            if (swapper.state == NONE) {
-                swapper.state = SWAPPING_START;
-            }
-            
-            // Start swapper
-            switch (swapper.state) {
-                case SWAPPING_START:
-                    if (isMacOS) {
-                        register_mods(MOD_LGUI);
-                    } else {
-                        register_mods(MOD_LALT);
-                    }
-                    swapper.state = SWAPPING_CONTINUE;
-                    break;
-                case SWAPPING_CONTINUE:
-                    tap_code(KC_TAB);
-                    break;
-                default:
-                    break;
-            break;
-            }
-    }
+    process_swapper(keycode, record);
+
     return true;
 }
 
